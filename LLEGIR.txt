@@ -1,0 +1,15 @@
+
+CARPETA_BOOKS(fitxers de books)
+
+CARPETA_MOVIES(fitxers de movies)
+
+CARPETA ALTRES(fitxers NO ACTUALITZATS)
+
+CARPETA COPIES(copies recomendaros)
+
+Codi_Provisional: 
+- Codi FUNCIONAL del Recomenador Simple amb diccionaris i llistes
+Codi_Matrius: 
+- Codi FUNCIONAL del Recomenador Simple amb matrius
+
+

@@ -1,0 +1,22 @@
+"""
+Dos bases de dades diferents.
+
+Fitxers Movies: 
+
+-> links: int(movieid), int(imdbld), int(tmdbld)
+-> movies: int(movieid), str(title), str(generes)
+-> rating: int(userid), int(movideid), float(rating), int(timestamp)
+-> tags: int(userid), int(movieid), str(tag), int(timestamp)
+
+Fitxers Books:
+
+-> Users: int(userid), str(location), float(age)
+-> Books: str(ISBN), str(book.title), str(book-author), int(year-of-pub), str(publisher), str(image-url-s), str(image-url-m), str(image-url-l)
+-> Ratings: int(userid), str(ISBN), int(book-rating)
+
+Primer es fa la càrrega de dades. I crec que la millor forma de fer-ho és posar les valoracions de les movies i els books en matrius. I llavors la resta de dades en llistes o diccionaris, el què sigui millor. 
+Aban de carregar les dades en les lliste omatrius, que es faci un comproacio dels documents, per mirar que en els hi falti cop parametre, si ho fa no sé si fer que el programa salti la linia i no l'afegeix.i o que en el lloc d'aquell paràmetre hi posi algun caracter especial. Què em recomanes?
+"""
+
+
+
