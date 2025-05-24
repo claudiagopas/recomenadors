@@ -362,6 +362,7 @@ class RecomanadorCol·laboratiu(Recomanador):
 
         recomanacions.sort(key=lambda x: x[1], reverse=True)
         return recomanacions[:n]
+    
 
 def main():
     print("=== SISTEMA DE RECOMANACIÓ ===")
