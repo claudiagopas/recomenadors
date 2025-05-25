@@ -449,99 +449,93 @@ class RecomanadorContingut(Recomanador):
         super().__init__(dades)
         self._tfidf_matrix = None
         self._vocabulari = None
-        if isinstance(dades, DadesPelis):
-            self.valoracio_maxima= 5.0
-        else:
-            self.valoracio_maxima = 10.0
+        self._item_ids_ordenats = list(sorted(self._dades._item_id_to_idx, key=lambda k: self._dades._item_id_to_idx[k]))
+        self.valoracio_maxima = 5.0 if isinstance(dades, DadesPelis) else 10.0
         self._prepara_tfidf()
 
     def _prepara_tfidf(self):
-
         item_features = []
-        items = sorted(self._dades._items.items(), key=lambda x: self._dades._item_id_to_idx[x[0]])
-        
-        for item_id, item in items:
+        for item_id in self._item_ids_ordenats:
+            item = self._dades.get_item(item_id)
             if isinstance(item, Peli):
-                genres = item._genere.replace('|', ' ')
-                item_features.append(genres)
+                features = item._genere.replace('|', ' ')
             elif isinstance(item, Llibre):
                 features = f"{item._autor} {item._editorial} {item._any}"
-                item_features.append(features)
-        
-        if item_features:
-            tfidf = TfidfVectorizer(stop_words='english')
-            self._tfidf_matrix = tfidf.fit_transform(item_features).toarray()
-            self._vocabulari = tfidf.get_feature_names_out()
-            logging.info(f"Matriu TF-IDF creada amb {len(self._vocabulari)} característiques")
-            print("Vocabulary:", self._vocabulari)
-            print("Shape:", self._tfidf_matrix.shape)    
-    
+            else:
+                features = ""
+            item_features.append(features)
+
+        tfidf = TfidfVectorizer(stop_words='english')
+        self._tfidf_matrix = tfidf.fit_transform(item_features).toarray()
+        self._vocabulari = tfidf.get_feature_names_out()
+        logging.info(f"TF-IDF creat: {self._tfidf_matrix.shape[0]} ítems, {self._tfidf_matrix.shape[1]} característiques")
+
     def _calcular_perfil_usuari(self, user_idx: int) -> Optional[np.ndarray]:
-        if self._tfidf_matrix is None:
-            return None
-        # Obtenir les valoracions de l'usuari
-        valoracions = self._dades.get_rating_matrix()[user_idx]
+        matriu = self._dades.get_rating_matrix()
+        valoracions = matriu[user_idx]
         items_valorats = np.where(valoracions > 0)[0]
-        
+
         if len(items_valorats) == 0:
             return None
-        
-        # operació 
+
         rated_ratings = valoracions[items_valorats]
         rated_tfidf = self._tfidf_matrix[items_valorats]
+
         numerador = np.sum(rated_ratings[:, np.newaxis] * rated_tfidf, axis=0)
-        
         denominador = np.sum(rated_ratings)
-    
-        if denominador > 0 :
-            return numerador / denominador
-        else:
-            return None
-    
 
-    def _calcula_similitud(self, perfil: np.ndarray) -> Optional[np.ndarray]:
-        if self._tfidf_matrix is None or perfil is None:
-            return None
-        similitud = cosine_similarity(perfil.reshape(1, -1), self._tfidf_matrix)
-        return similitud
+        return numerador / denominador if denominador > 0 else None
 
-    def recomana(self, user_id: int, n=5) -> List[Tuple[Item, float]]:
-        
+    def _calcula_similituds(self, perfil: np.ndarray) -> np.ndarray:
+        return cosine_similarity(perfil.reshape(1, -1), self._tfidf_matrix)[0]
+
+    def recomana(self, user_id: int, n: int = 5) -> List[Tuple[Item, float]]:
         user_idx = self._dades._user_id_to_idx.get(user_id)
         if user_idx is None:
-            logging.warning(f"Usuari {user_id} no trobat")
             return []
-        
+
         perfil = self._calcular_perfil_usuari(user_idx)
         if perfil is None:
-            logging.info(f"Usuari {user_id} no té valoracions per generar perfil")
             return []
-        
-        
-        similituds =  self._calcula_similitud(perfil)[0]
-        if similituds is None or np.count_nonzero(similituds) == 0:
-            logging.info(f"Usuari {user_id} no té ítems valorats per generar recomanacions")
-            return []
-        
 
-        ratings = self._dades.get_rating_matrix()[user_idx]
-        unrated_items = np.where(ratings == 0)[0]
-        
-        puntuacions = similituds*self.valoracio_maxima
-        # Ordenar per puntuació descendent
-        top_indices = unrated_items[np.argsort(puntuacions[unrated_items])[::-1][:n]]
-        
-        # Generar resultats
-        resultats = []
-        for index in top_indices:
-            item_id = list(self._dades._item_id_to_idx.keys())[index]
+        similituds = self._calcula_similituds(perfil)
+        valoracions = self._dades.get_rating_matrix()[user_idx]
+        unrated = np.where(valoracions == 0)[0]
+
+        puntuacions = similituds * self.valoracio_maxima
+        top_indices = unrated[np.argsort(puntuacions[unrated])[::-1][:n]]
+
+        recomanacions = []
+        for idx in top_indices:
+            item_id = self._item_ids_ordenats[idx]
             item = self._dades.get_item(item_id)
             if item:
-                resultats.append((item, puntuacions[index]))
-        
-        logging.warning(f"Generades {len(resultats)} recomanacions per usuari {user_id}")
-        
-        return resultats
+                recomanacions.append((item, puntuacions[idx]))
+
+        return recomanacions
+
+    def prediu(self, user_id: int, item_ids: List[Union[int, str]]) -> List[Tuple[Item, float]]:
+        user_idx = self._dades._user_id_to_idx.get(user_id)
+        if user_idx is None:
+            return []
+
+        perfil = self._calcular_perfil_usuari(user_idx)
+        if perfil is None:
+            return []
+
+        similituds = self._calcula_similituds(perfil)
+        prediccions = []
+
+        for item_id in item_ids:
+            item_idx = self._dades._item_id_to_idx.get(item_id)
+            if item_idx is not None:
+                score = similituds[item_idx] * self.valoracio_maxima
+                item = self._dades.get_item(item_id)
+                if item:
+                    prediccions.append((item, score))
+
+        return prediccions
+
 
 class Avaluador:
     """
@@ -624,7 +618,7 @@ def main():
         elif method == "col·laboratiu":
             recomanador = RecomanadorCol·laboratiu(dades)
         elif method == "contingut":
-            recomanador = RecomenadorContingut(dades)
+            recomanador = RecomanadorContingut(dades)
         else:
             print("Mètode no implementat")
             return

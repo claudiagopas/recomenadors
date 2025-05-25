@@ -1,0 +1,5 @@
+2025-05-25 18:46:04,026 [INFO] Matriu TF-IDF creada amb 23 característiques
+2025-05-25 18:46:04,026 [INFO] Desant recomanador a recommender_pelis_contingut.dat
+2025-05-25 18:46:17,611 [WARNING] Generades 5 recomanacions per usuari 1
+2025-05-25 18:46:27,790 [WARNING] Generades 5 recomanacions per usuari 2
+2025-05-25 18:46:44,770 [WARNING] Generades 5 recomanacions per usuari 4

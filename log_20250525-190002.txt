@@ -1,0 +1,2 @@
+2025-05-25 19:00:03,004 [INFO] TF-IDF creat: 9742 ítems, 23 característiques
+2025-05-25 19:00:03,004 [INFO] Desant recomanador a recommender_pelis_contingut.dat
