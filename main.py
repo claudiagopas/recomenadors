@@ -5,6 +5,7 @@ import os
 import sys
 import csv
 from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import pickle
 import logging
 from datetime import datetime
@@ -301,6 +302,9 @@ class RecomanadorSimple(Recomanador):
         valoracions_usuari = matriu[user_idx]
         items_valorats = set(np.where(valoracions_usuari > 0)[0])
         avg_global = np.mean(matriu[matriu > 0]) if np.count_nonzero(matriu) > 0 else 0.0
+        if avg_global == 0.0:
+            logging.warning("No hi ha valoracions globals per calcular la mitjana.")
+            return []
 
         prediccions = []
         for item_idx in range(matriu.shape[1]):
@@ -390,7 +394,15 @@ class RecomanadorCol·laboratiu(Recomanador):
             return []
 
         user_ratings = matriu[user_idx]
-        mu_u = np.mean(user_ratings[user_ratings > 0])
+        if np.any(user_ratings >0):
+            mu_u = np.mean(user_ratings[user_ratings > 0]) 
+        else:
+            mu_u = 0.0
+
+        if mu_u == 0.0:
+            logging.warning("Usuari sense valoracions per calcular la mitjana.")
+            return []    
+
         similituds = self._similituds_usuari(user_idx, matriu)
 
         prediccions = []
@@ -436,14 +448,14 @@ class RecomanadorContingut(Recomanador):
     def __init__(self, dades: Dades):
         super().__init__(dades)
         self._tfidf_matrix = None
-        self._feature_names = None
+        self._vocabulari = None
         if isinstance(dades, DadesPelis):
             self.valoracio_maxima= 5.0
         else:
             self.valoracio_maxima = 10.0
         self._prepara_tfidf()
 
-    def prepara_ftidf(self):
+    def _prepara_tfidf(self):
 
         item_features = []
         items = sorted(self._dades._items.items(), key=lambda x: self._dades._item_id_to_idx[x[0]])
@@ -459,8 +471,10 @@ class RecomanadorContingut(Recomanador):
         if item_features:
             tfidf = TfidfVectorizer(stop_words='english')
             self._tfidf_matrix = tfidf.fit_transform(item_features).toarray()
-            vocabulari = tfidf.get_feature_names_out()
-        
+            self._vocabulari = tfidf.get_feature_names_out()
+            logging.info(f"Matriu TF-IDF creada amb {len(self._vocabulari)} característiques")
+            print("Vocabulary:", self._vocabulari)
+            print("Shape:", self._tfidf_matrix.shape)    
     
     def _calcular_perfil_usuari(self, user_idx: int) -> Optional[np.ndarray]:
         if self._tfidf_matrix is None:
@@ -484,42 +498,48 @@ class RecomanadorContingut(Recomanador):
         else:
             return None
     
+
     def _calcula_similitud(self, perfil: np.ndarray) -> Optional[np.ndarray]:
         if self._tfidf_matrix is None or perfil is None:
             return None
-        
-        similituds = np.dot(self._tfidf_matrix, perfil.T)
-        return similituds
-    
-
+        similitud = cosine_similarity(perfil.reshape(1, -1), self._tfidf_matrix)
+        return similitud
 
     def recomana(self, user_id: int, n=5) -> List[Tuple[Item, float]]:
         
-        user_idx = self._dades._user_id_to_idx[user_id]
+        user_idx = self._dades._user_id_to_idx.get(user_id)
         if user_idx is None:
-            return []
-        perfil = self.calcular_perfil(user_idx)
-        if perfil is None:
-            return []
-        similituds = self._calcula_similitud(perfil)
-        if similituds is None:
+            logging.warning(f"Usuari {user_id} no trobat")
             return []
         
-        puntuacions = similituds * self._pmax
+        perfil = self._calcular_perfil_usuari(user_idx)
+        if perfil is None:
+            logging.info(f"Usuari {user_id} no té valoracions per generar perfil")
+            return []
+        
+        
+        similituds =  self._calcula_similitud(perfil)[0]
+        if similituds is None or np.count_nonzero(similituds) == 0:
+            logging.info(f"Usuari {user_id} no té ítems valorats per generar recomanacions")
+            return []
+        
 
         ratings = self._dades.get_rating_matrix()[user_idx]
         unrated_items = np.where(ratings == 0)[0]
         
+        puntuacions = similituds*self.valoracio_maxima
         # Ordenar per puntuació descendent
         top_indices = unrated_items[np.argsort(puntuacions[unrated_items])[::-1][:n]]
         
         # Generar resultats
         resultats = []
-        for idx in top_indices:
-            item_id = list(self._dades._item_id_to_idx.keys())[idx]
+        for index in top_indices:
+            item_id = list(self._dades._item_id_to_idx.keys())[index]
             item = self._dades.get_item(item_id)
             if item:
-                resultats.append((item, puntuacions[idx]))
+                resultats.append((item, puntuacions[index]))
+        
+        logging.warning(f"Generades {len(resultats)} recomanacions per usuari {user_id}")
         
         return resultats
 
