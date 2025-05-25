@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 import csv
 import os
+from sklearn.feature_extraction.text import TfidfVectorizer
 import numpy as np
 from typing import List, Dict, Optional, Union, Tuple
 
@@ -287,13 +288,13 @@ class RecomanadorCol·laboratiu(Recomanador):
         matriu = self._dades.get_rating_matrix()
         user_idx = self._dades._user_id_to_idx.get(user_id)
         if user_idx is None:
-            print("⚠️ Usuari no trobat")
+            print(" Usuari no trobat")
             return []
 
         user_ratings = matriu[user_idx, :]
         valoracions_valides = user_ratings[user_ratings > 0]
         if len(valoracions_valides) == 0:
-            print("⚠️ L'usuari no té valoracions")
+            print(" L'usuari no té valoracions")
             return []
             
         mu_u = np.mean(valoracions_valides)
@@ -331,7 +332,7 @@ class RecomanadorCol·laboratiu(Recomanador):
 
         # Si no hi ha veïns, retornar buit
         if not top_k:
-            print("⚠️ No s'han trobat usuaris similars")
+            print("No s'han trobat usuaris similars")
             return []
 
         scores = np.zeros(matriu.shape[1])
@@ -357,11 +358,102 @@ class RecomanadorCol·laboratiu(Recomanador):
                     recomanacions.append((item, pred))
         
         if not recomanacions:
-            print("⚠️ No hi ha suficients dades per generar recomanacions")
+            print("No hi ha suficients dades per generar recomanacions")
             return []
 
         recomanacions.sort(key=lambda x: x[1], reverse=True)
         return recomanacions[:n]
+    
+class Recomanador_Contingut(Recomanador):
+    def __init__(self, dades: Dades):
+        super().__init__(dades)
+        self._tfidf_matrix = None
+        self._feature_names = None
+        if isinstance(dades, DadesPelis):
+            self.valoracio_maxima= 5.0
+        else:
+            self.valoracio_maxima = 10.0
+        self._prepara_tfidf()
+
+    def prepara_ftidf(self):
+
+        item_features = []
+        items = sorted(self._dades._items.items(), key=lambda x: self._dades._item_id_to_idx[x[0]])
+        
+        for item_id, item in items:
+            if isinstance(item, Peli):
+                genres = item._genere.replace('|', ' ')
+                item_features.append(genres)
+            elif isinstance(item, Llibre):
+                features = f"{item._autor} {item._editorial} {item._any}"
+                item_features.append(features)
+        
+        if item_features:
+            tfidf = TfidfVectorizer(stop_words='english')
+            self._tfidf_matrix = tfidf.fit_transform(item_features).toarray()
+            vocabulari = tfidf.get_feature_names_out()
+        
+    
+    def _calcular_perfil_usuari(self, user_idx: int) -> Optional[np.ndarray]:
+        if self._tfidf_matrix is None:
+            return None
+        # Obtenir les valoracions de l'usuari
+        valoracions = self._dades.get_rating_matrix()[user_idx]
+        items_valorats = np.where(valoracions > 0)[0]
+        
+        if len(items_valorats) == 0:
+            return None
+        
+        # operació 
+        rated_ratings = valoracions[items_valorats]
+        rated_tfidf = self._tfidf_matrix[items_valorats]
+        numerador = np.sum(rated_ratings[:, np.newaxis] * rated_tfidf, axis=0)
+        
+        denominador = np.sum(rated_ratings)
+    
+        if denominador > 0 :
+            return numerador / denominador
+        else:
+            return None
+    
+    def _calcula_similitud(self, perfil: np.ndarray) -> Optional[np.ndarray]:
+        if self._tfidf_matrix is None or perfil is None:
+            return None
+        
+        similituds = np.dot(self._tfidf_matrix, perfil.T)
+        return similituds
+    
+
+
+    def recomana(self, user_id: int, n=5) -> List[Tuple[Item, float]]:
+        
+        user_idx = self._dades._user_id_to_idx[user_id]
+        if user_idx is None:
+            return []
+        perfil = self.calcular_perfil(user_idx)
+        if perfil is None:
+            return []
+        similituds = self._calcula_similitud(perfil)
+        if similituds is None:
+            return []
+        
+        puntuacions = similituds * self._pmax
+
+        ratings = self._dades.get_rating_matrix()[user_idx]
+        unrated_items = np.where(ratings == 0)[0]
+        
+        # Ordenar per puntuació descendent
+        top_indices = unrated_items[np.argsort(puntuacions[unrated_items])[::-1][:n]]
+        
+        # Generar resultats
+        resultats = []
+        for idx in top_indices:
+            item_id = list(self._dades._item_id_to_idx.keys())[idx]
+            item = self._dades.get_item(item_id)
+            if item:
+                resultats.append((item, puntuacions[idx]))
+        
+        return resultats
     
 
 def main():
